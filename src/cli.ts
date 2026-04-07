@@ -22,6 +22,7 @@ type SpinnerController = {
 interface CliOptions {
   warmupEnabled: boolean;
   keepAlive: string;
+  showHelp: boolean;
 }
 
 function startLoadingBanner(message: string): SpinnerController {
@@ -44,6 +45,14 @@ function startLoadingBanner(message: string): SpinnerController {
 }
 
 function parseCliOptions(argv: string[]): CliOptions {
+  if (argv.includes("--help") || argv.includes("-h")) {
+    return {
+      warmupEnabled: true,
+      keepAlive: DEFAULT_OLLAMA_KEEP_ALIVE,
+      showHelp: true,
+    };
+  }
+
   let warmupEnabled = true;
   let keepAlive = DEFAULT_OLLAMA_KEEP_ALIVE;
 
@@ -79,7 +88,27 @@ function parseCliOptions(argv: string[]): CliOptions {
   return {
     warmupEnabled,
     keepAlive,
+    showHelp: false,
   };
+}
+
+function printHelp(): void {
+  console.log(`dexter - secure Linux command generator
+
+Usage:
+  dexter [options]
+
+Options:
+  --help, -h              Show this help message
+  --no-warmup             Skip model preloading on startup
+  --keep-alive <string>   Pass keep_alive directly to Ollama warmup (default: ${DEFAULT_OLLAMA_KEEP_ALIVE})
+
+Examples:
+  dexter
+  dexter --no-warmup
+  dexter --keep-alive 15m
+  dexter --keep-alive="2h"
+`);
 }
 
 async function warmupOnStartup(options: CliOptions): Promise<void> {
@@ -138,6 +167,12 @@ async function promptConfirmation(command: string): Promise<boolean> {
 
 async function main(): Promise<void> {
   const options = parseCliOptions(process.argv.slice(2));
+
+  if (options.showHelp) {
+    printHelp();
+    return;
+  }
+
   await warmupOnStartup(options);
 
   while (true) {

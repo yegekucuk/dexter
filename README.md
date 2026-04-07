@@ -54,6 +54,12 @@ Then run:
 dexter
 ```
 
+Show help:
+
+```bash
+dexter --help
+```
+
 Remove global link:
 
 ```bash

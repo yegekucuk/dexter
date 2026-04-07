@@ -9,6 +9,7 @@ import {
   buildUserPrompt,
   DEXTER_SYSTEM_PROMPT,
   NO_INTERPRETER_RETRY_SYSTEM_PROMPT,
+  type PromptHistoryTurn,
 } from "./prompt.js";
 
 interface OllamaGenerateResponse {
@@ -148,8 +149,11 @@ export async function resolvePreferredModel(
 async function generateWithModel(
   model: string,
   userInput: string,
-  extraInstruction?: string,
-  extraSystemPrompt?: string,
+  options?: {
+    extraInstruction?: string;
+    extraSystemPrompt?: string;
+    history?: PromptHistoryTurn[];
+  },
 ): Promise<string> {
   const timed = withTimeoutSignal(OLLAMA_REQUEST_TIMEOUT_MS);
 
@@ -161,8 +165,11 @@ async function generateWithModel(
       },
       body: JSON.stringify({
         model,
-        prompt: buildUserPrompt(userInput, extraInstruction),
-        system: [DEXTER_SYSTEM_PROMPT, extraSystemPrompt].filter(Boolean).join(" "),
+        prompt: buildUserPrompt(userInput, {
+          extraInstruction: options?.extraInstruction,
+          history: options?.history,
+        }),
+        system: [DEXTER_SYSTEM_PROMPT, options?.extraSystemPrompt].filter(Boolean).join(" "),
         stream: false,
       }),
       signal: timed.signal,
@@ -191,6 +198,7 @@ export async function generateCommand(
   options?: {
     extraInstruction?: string;
     extraSystemPrompt?: string;
+    history?: PromptHistoryTurn[];
   },
 ): Promise<string> {
   const errors: string[] = [];
@@ -200,8 +208,11 @@ export async function generateCommand(
       return await generateWithModel(
         model,
         userInput,
-        options?.extraInstruction,
-        options?.extraSystemPrompt,
+        {
+          extraInstruction: options?.extraInstruction,
+          extraSystemPrompt: options?.extraSystemPrompt,
+          history: options?.history,
+        },
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -219,10 +230,12 @@ export async function generateCommand(
 export async function generateWithoutInterpreters(
   userInput: string,
   models: string[] = [...DEFAULT_OLLAMA_MODELS],
+  history?: PromptHistoryTurn[],
 ): Promise<string> {
   return await generateCommand(userInput, models, {
     extraInstruction:
       "Important: do not use python/python3/perl/ruby/node. Use shell tools and tee for file writes.",
     extraSystemPrompt: NO_INTERPRETER_RETRY_SYSTEM_PROMPT,
+    history,
   });
 }

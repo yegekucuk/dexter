@@ -13,15 +13,45 @@ export const NO_INTERPRETER_RETRY_SYSTEM_PROMPT = [
   "Prefer printf or cat piped to tee when writing file content.",
 ].join(" ");
 
-export function buildUserPrompt(input: string, extraInstruction?: string): string {
+export interface PromptHistoryTurn {
+  request: string;
+  command: string;
+  status: string;
+}
+
+interface BuildUserPromptOptions {
+  extraInstruction?: string;
+  history?: PromptHistoryTurn[];
+}
+
+function compactLine(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+export function buildUserPrompt(input: string, options?: BuildUserPromptOptions): string {
   const lines = [
     "User request:",
     input.trim(),
     "Output only the command.",
   ];
 
-  if (extraInstruction?.trim()) {
-    lines.push(extraInstruction.trim());
+  const history = options?.history ?? [];
+
+  if (history.length > 0) {
+    lines.push("Recent session context (oldest to newest):");
+
+    history.forEach((turn, index) => {
+      const request = compactLine(turn.request);
+      const command = compactLine(turn.command);
+      const status = compactLine(turn.status);
+      lines.push(`${index + 1}. request: ${request}`);
+      lines.push(`   command: ${command}`);
+      lines.push(`   status: ${status}`);
+    });
+  }
+
+  if (options?.extraInstruction?.trim()) {
+    lines.push(options.extraInstruction.trim());
   }
 
   return lines.join("\n");

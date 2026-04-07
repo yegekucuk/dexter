@@ -3,9 +3,12 @@
 import inquirer from "inquirer";
 import {
   COMMAND_EXEC_TIMEOUT_MS,
+  DEXTER_CLEAR_KEY,
   DEFAULT_OLLAMA_KEEP_ALIVE,
   DEFAULT_OLLAMA_MODELS,
   DEXTER_EXIT_KEY,
+  DEXTER_HISTORY_KEY,
+  DEXTER_HISTORY_WINDOW,
 } from "./config.js";
 import { runCommand } from "./executor/run.js";
 import {
@@ -14,6 +17,7 @@ import {
   resolvePreferredModel,
   warmupModels,
 } from "./generator/ollama.js";
+import type { PromptHistoryTurn } from "./generator/prompt.js";
 import { checkCommandSafety } from "./security/check.js";
 import { normalizeCommand } from "./security/normalize.js";
 import { rewriteRedirectionToTee } from "./security/redirection.js";
@@ -38,6 +42,12 @@ interface CliOptions {
   models: string[];
   customModelsProvided: boolean;
   showHelp: boolean;
+}
+
+interface SessionTurn {
+  request: string;
+  command: string;
+  status: string;
 }
 
 function parseModelValue(rawValue: string): string[] {
@@ -170,6 +180,11 @@ Examples:
   dexter --model gemma4:e2b,qwen3.5:0.8b
   dexter --keep-alive 15m
   dexter --keep-alive="2h"
+
+Session commands:
+  ${DEXTER_HISTORY_KEY}               Show in-memory conversation log
+  ${DEXTER_CLEAR_KEY}                 Clear in-memory conversation log
+  ${DEXTER_EXIT_KEY}                  Quit Dexter
 `);
 }
 
@@ -233,11 +248,36 @@ async function promptInput(): Promise<string> {
     {
       type: "input",
       name: "request",
-      message: "Describe the Linux command you need (or q to quit):",
+      message: `Describe the Linux command you need (${DEXTER_EXIT_KEY} to quit):`,
     },
   ]);
 
   return answer.request.trim();
+}
+
+function buildPromptHistoryWindow(history: SessionTurn[]): PromptHistoryTurn[] {
+  if (history.length <= DEXTER_HISTORY_WINDOW) {
+    return history;
+  }
+
+  return history.slice(history.length - DEXTER_HISTORY_WINDOW);
+}
+
+function printSessionHistory(history: SessionTurn[]): void {
+  if (history.length === 0) {
+    console.log("No session history yet.\n");
+    return;
+  }
+
+  console.log("\nSession history:\n");
+
+  history.forEach((turn, index) => {
+    console.log(`[${index + 1}] request: ${turn.request}`);
+    console.log(`    command: ${turn.command}`);
+    console.log(`    status: ${turn.status}`);
+  });
+
+  console.log("");
 }
 
 async function promptConfirmation(command: string): Promise<boolean> {
@@ -278,24 +318,49 @@ async function main(): Promise<void> {
   };
 
   await warmupOnStartup(sessionOptions);
+  const sessionHistory: SessionTurn[] = [];
 
   while (true) {
     const request = await promptInput();
 
     if (!request) {
-      console.log("Please provide a request or type q to exit.\n");
+      console.log(`Please provide a request or type ${DEXTER_EXIT_KEY} to exit.\n`);
       continue;
     }
 
-    if (request.toLowerCase() === DEXTER_EXIT_KEY) {
+    const loweredRequest = request.toLowerCase();
+
+    if (loweredRequest === DEXTER_EXIT_KEY) {
       console.log("Bye.");
       return;
     }
 
+    if (loweredRequest === DEXTER_HISTORY_KEY) {
+      printSessionHistory(sessionHistory);
+      continue;
+    }
+
+    if (loweredRequest === DEXTER_CLEAR_KEY) {
+      sessionHistory.length = 0;
+      console.log("Session history cleared.\n");
+      continue;
+    }
+
+    const modelHistory = buildPromptHistoryWindow(sessionHistory);
+    let turn: SessionTurn = {
+      request,
+      command: "-",
+      status: "generation_failed",
+    };
+
     let rawCommand: string;
     try {
-      rawCommand = await generateCommand(request, sessionOptions.models);
+      rawCommand = await generateCommand(request, sessionOptions.models, {
+        history: modelHistory,
+      });
     } catch (error) {
+      turn.status = `generation_failed: ${formatError(error)}`;
+      sessionHistory.push(turn);
       console.log(`Command generation failed: ${formatError(error)}\n`);
       continue;
     }
@@ -303,24 +368,34 @@ async function main(): Promise<void> {
     let normalizedCommand = normalizeCommand(rawCommand);
     let rewritten = await rewriteRedirectionToTee(normalizedCommand);
     let candidateCommand = rewritten.command;
+    turn.command = candidateCommand;
     let safety = checkCommandSafety(candidateCommand);
 
     if (!safety.safe && isInterpreterBlocked(safety.reasons)) {
       console.log("Blocked interpreter command generated. Retrying with shell-only + tee instructions...\n");
 
       try {
-        const retryRaw = await generateWithoutInterpreters(request, sessionOptions.models);
+        const retryRaw = await generateWithoutInterpreters(
+          request,
+          sessionOptions.models,
+          modelHistory,
+        );
         normalizedCommand = normalizeCommand(retryRaw);
         rewritten = await rewriteRedirectionToTee(normalizedCommand);
         candidateCommand = rewritten.command;
+        turn.command = candidateCommand;
         safety = checkCommandSafety(candidateCommand);
       } catch (error) {
+        turn.status = `retry_generation_failed: ${formatError(error)}`;
+        sessionHistory.push(turn);
         console.log(`Retry generation failed: ${formatError(error)}\n`);
         continue;
       }
     }
 
     if (!safety.safe) {
+      turn.status = `blocked: ${safety.reasons.join(" | ")}`;
+      sessionHistory.push(turn);
       console.log("Command blocked by security policy:");
       for (const reason of safety.reasons) {
         console.log(`- ${reason}`);
@@ -331,6 +406,8 @@ async function main(): Promise<void> {
 
     const confirmed = await promptConfirmation(candidateCommand);
     if (!confirmed) {
+      turn.status = "discarded";
+      sessionHistory.push(turn);
       console.log("Command discarded.\n");
       continue;
     }
@@ -341,10 +418,15 @@ async function main(): Promise<void> {
       const result = await runCommand(candidateCommand, COMMAND_EXEC_TIMEOUT_MS);
 
       if (result.timedOut) {
+        turn.status = "timeout";
         console.log(`\nCommand timed out after ${COMMAND_EXEC_TIMEOUT_MS}ms.`);
       } else if (result.exitCode === 0) {
+        turn.status = "success";
         console.log("\nCommand completed successfully.");
       } else {
+        turn.status = `failed(exit=${String(result.exitCode)}${
+          result.signal ? `,signal=${result.signal}` : ""
+        })`;
         console.log(
           `\nCommand finished with exit code ${String(result.exitCode)}${
             result.signal ? ` (signal: ${result.signal})` : ""
@@ -352,11 +434,12 @@ async function main(): Promise<void> {
         );
       }
     } catch (error) {
+      turn.status = `execution_error: ${formatError(error)}`;
       console.log(`\nCommand execution failed: ${formatError(error)}`);
     }
 
-    console.log("Exiting after one execution.");
-    return;
+    sessionHistory.push(turn);
+    console.log("");
   }
 }
 

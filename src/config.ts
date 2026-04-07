@@ -1,4 +1,7 @@
-export const DEXTER_EXIT_KEY = "q";
+export const DEXTER_EXIT_KEY = "/bye";
+export const DEXTER_HISTORY_KEY = "/history";
+export const DEXTER_CLEAR_KEY = "/clear";
+export const DEXTER_HISTORY_WINDOW = 12;
 
 export const OLLAMA_BASE_URL =
   process.env.DEXTER_OLLAMA_URL?.trim() || "http://localhost:11434";

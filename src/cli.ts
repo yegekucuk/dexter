@@ -329,21 +329,6 @@ async function main(): Promise<void> {
       continue;
     }
 
-    if (rewritten.rewrites.length > 0) {
-      console.log("Rewrote file redirection to tee:");
-      for (const change of rewritten.rewrites) {
-        if (change.clonedToTmp && change.backupTarget) {
-          console.log(
-            `- ${change.operator} ${change.sourceTarget} => ${change.finalTarget} (old content backed up to ${change.backupTarget})`,
-          );
-          continue;
-        }
-
-        console.log(`- ${change.operator} ${change.sourceTarget} => ${change.finalTarget}`);
-      }
-      console.log("");
-    }
-
     const confirmed = await promptConfirmation(candidateCommand);
     if (!confirmed) {
       console.log("Command discarded.\n");

@@ -151,8 +151,8 @@ Options:
 Examples:
   dexter
   dexter --no-warmup
-  dexter --model qwen3.5:2b
-  dexter --model qwen3.5:4b,qwen3.5:2b
+  dexter --model gemma4:e2b
+  dexter --model gemma4:e2b,qwen3.5:0.8b
   dexter --keep-alive 15m
   dexter --keep-alive="2h"
 `);

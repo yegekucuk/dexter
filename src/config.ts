@@ -4,7 +4,7 @@ export const OLLAMA_BASE_URL =
   process.env.DEXTER_OLLAMA_URL?.trim() || "http://localhost:11434";
 
 export const DEFAULT_OLLAMA_MODELS = [
-  "qwen3.5:2b",
+  "gemma4:e2b",
   "qwen3.5:0.8b",
 ] as const;
 

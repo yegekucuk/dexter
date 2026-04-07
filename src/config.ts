@@ -3,7 +3,7 @@ export const DEXTER_EXIT_KEY = "q";
 export const OLLAMA_BASE_URL =
   process.env.DEXTER_OLLAMA_URL?.trim() || "http://localhost:11434";
 
-export const OLLAMA_MODELS = [
+export const DEFAULT_OLLAMA_MODELS = [
   "qwen3.5:2b",
   "qwen3.5:0.8b",
 ] as const;

@@ -4,6 +4,7 @@ import inquirer from "inquirer";
 import {
   COMMAND_EXEC_TIMEOUT_MS,
   DEFAULT_OLLAMA_KEEP_ALIVE,
+  DEFAULT_OLLAMA_MODELS,
   DEXTER_EXIT_KEY,
 } from "./config.js";
 import { runCommand } from "./executor/run.js";
@@ -22,7 +23,15 @@ type SpinnerController = {
 interface CliOptions {
   warmupEnabled: boolean;
   keepAlive: string;
+  models: string[];
   showHelp: boolean;
+}
+
+function parseModelValue(rawValue: string): string[] {
+  return rawValue
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function startLoadingBanner(message: string): SpinnerController {
@@ -49,12 +58,14 @@ function parseCliOptions(argv: string[]): CliOptions {
     return {
       warmupEnabled: true,
       keepAlive: DEFAULT_OLLAMA_KEEP_ALIVE,
+      models: [...DEFAULT_OLLAMA_MODELS],
       showHelp: true,
     };
   }
 
   let warmupEnabled = true;
   let keepAlive = DEFAULT_OLLAMA_KEEP_ALIVE;
+  const selectedModels: string[] = [];
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] ?? "";
@@ -82,12 +93,45 @@ function parseCliOptions(argv: string[]): CliOptions {
 
       keepAlive = next;
       i += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--model=")) {
+      const value = arg.slice("--model=".length).trim();
+      const parsed = parseModelValue(value);
+
+      if (parsed.length === 0) {
+        throw new Error("Flag '--model' must include at least one model value.");
+      }
+
+      selectedModels.push(...parsed);
+      continue;
+    }
+
+    if (arg === "--model") {
+      const next = (argv[i + 1] ?? "").trim();
+      if (!next || next.startsWith("-")) {
+        throw new Error("Flag '--model' requires a value.");
+      }
+
+      const parsed = parseModelValue(next);
+      if (parsed.length === 0) {
+        throw new Error("Flag '--model' must include at least one model value.");
+      }
+
+      selectedModels.push(...parsed);
+      i += 1;
     }
   }
+
+  const models = selectedModels.length > 0
+    ? [...new Set(selectedModels)]
+    : [...DEFAULT_OLLAMA_MODELS];
 
   return {
     warmupEnabled,
     keepAlive,
+    models,
     showHelp: false,
   };
 }
@@ -101,11 +145,14 @@ Usage:
 Options:
   --help, -h              Show this help message
   --no-warmup             Skip model preloading on startup
+  --model <name[,name]>   Use custom model(s), in fallback order
   --keep-alive <string>   Pass keep_alive directly to Ollama warmup (default: ${DEFAULT_OLLAMA_KEEP_ALIVE})
 
 Examples:
   dexter
   dexter --no-warmup
+  dexter --model qwen3.5:2b
+  dexter --model qwen3.5:4b,qwen3.5:2b
   dexter --keep-alive 15m
   dexter --keep-alive="2h"
 `);
@@ -118,10 +165,10 @@ async function warmupOnStartup(options: CliOptions): Promise<void> {
   }
 
   const spinner = startLoadingBanner(
-    `Dexter is loading Ollama models into RAM (keep_alive: ${options.keepAlive})...`,
+    `Dexter is loading Ollama models into RAM (keep_alive: ${options.keepAlive}, models: ${options.models.join(", ")})...`,
   );
 
-  const results = await warmupModels(options.keepAlive);
+  const results = await warmupModels(options.models, options.keepAlive);
   const okCount = results.filter((item) => item.ok).length;
 
   if (okCount === results.length) {
@@ -190,7 +237,7 @@ async function main(): Promise<void> {
 
     let rawCommand: string;
     try {
-      rawCommand = await generateCommand(request);
+      rawCommand = await generateCommand(request, options.models);
     } catch (error) {
       console.log(`Command generation failed: ${formatError(error)}\n`);
       continue;

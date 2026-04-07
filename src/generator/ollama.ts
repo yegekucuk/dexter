@@ -1,6 +1,6 @@
 import {
   OLLAMA_BASE_URL,
-  OLLAMA_MODELS,
+  DEFAULT_OLLAMA_MODELS,
   OLLAMA_REQUEST_TIMEOUT_MS,
   OLLAMA_WARMUP_TIMEOUT_MS,
 } from "../config.js";
@@ -53,10 +53,13 @@ async function pingModelKeepAlive(model: string, keepAlive: string): Promise<voi
   }
 }
 
-export async function warmupModels(keepAlive: string): Promise<WarmupResult[]> {
+export async function warmupModels(
+  models: string[],
+  keepAlive: string,
+): Promise<WarmupResult[]> {
   const results: WarmupResult[] = [];
 
-  for (const model of OLLAMA_MODELS) {
+  for (const model of models) {
     try {
       await pingModelKeepAlive(model, keepAlive);
       results.push({ model, ok: true });
@@ -107,10 +110,13 @@ async function generateWithModel(
   }
 }
 
-export async function generateCommand(userInput: string): Promise<string> {
+export async function generateCommand(
+  userInput: string,
+  models: string[] = [...DEFAULT_OLLAMA_MODELS],
+): Promise<string> {
   const errors: string[] = [];
 
-  for (const model of OLLAMA_MODELS) {
+  for (const model of models) {
     try {
       return await generateWithModel(model, userInput);
     } catch (error) {
@@ -120,7 +126,7 @@ export async function generateCommand(userInput: string): Promise<string> {
   }
 
   throw new Error(
-    `Unable to generate command from Ollama. Tried models: ${OLLAMA_MODELS.join(
+    `Unable to generate command from Ollama. Tried models: ${models.join(
       ", ",
     )}. Errors: ${errors.join(" | ")}`,
   );

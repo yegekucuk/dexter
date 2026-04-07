@@ -6,6 +6,7 @@ Dexter is a secure Linux command generator CLI powered by Ollama.
 
 - Turns natural-language Linux requests into shell commands.
 - Uses `qwen3.5:2b` with fallback to `qwen3.5:0.8b`.
+- Supports custom model selection via `--model`.
 - Preloads both models into RAM at startup with configurable `keep_alive`.
 - Normalizes model output to a single command string.
 - Applies strict security checks before execution.
@@ -58,6 +59,18 @@ Show help:
 
 ```bash
 dexter --help
+```
+
+Use custom model order (primary -> fallback):
+
+```bash
+dexter --model qwen3.5:4b,qwen3.5:2b
+```
+
+or repeat the flag:
+
+```bash
+dexter --model qwen3.5:4b --model qwen3.5:2b
 ```
 
 Remove global link:
@@ -113,3 +126,12 @@ On startup, Dexter calls Ollama `/api/generate` for each configured model with:
 ```
 
 Defaults to `10m`, configurable via `--keep-alive <string>`, and sent as-is to Ollama.
+
+## Model selection
+
+By default, Dexter uses:
+
+1. `qwen3.5:2b`
+2. `qwen3.5:0.8b`
+
+You can override this order with `--model`.

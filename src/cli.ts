@@ -15,6 +15,7 @@ import {
 } from "./generator/ollama.js";
 import { checkCommandSafety } from "./security/check.js";
 import { normalizeCommand } from "./security/normalize.js";
+import { rewriteRedirectionToTee } from "./security/redirection.js";
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -293,7 +294,9 @@ async function main(): Promise<void> {
     }
 
     const normalizedCommand = normalizeCommand(rawCommand);
-    const safety = checkCommandSafety(normalizedCommand);
+    const rewritten = await rewriteRedirectionToTee(normalizedCommand);
+    const candidateCommand = rewritten.command;
+    const safety = checkCommandSafety(candidateCommand);
 
     if (!safety.safe) {
       console.log("Command blocked by security policy:");
@@ -304,7 +307,22 @@ async function main(): Promise<void> {
       continue;
     }
 
-    const confirmed = await promptConfirmation(normalizedCommand);
+    if (rewritten.rewrites.length > 0) {
+      console.log("Rewrote file redirection to tee:");
+      for (const change of rewritten.rewrites) {
+        if (change.clonedToTmp && change.backupTarget) {
+          console.log(
+            `- ${change.operator} ${change.sourceTarget} => ${change.finalTarget} (old content backed up to ${change.backupTarget})`,
+          );
+          continue;
+        }
+
+        console.log(`- ${change.operator} ${change.sourceTarget} => ${change.finalTarget}`);
+      }
+      console.log("");
+    }
+
+    const confirmed = await promptConfirmation(candidateCommand);
     if (!confirmed) {
       console.log("Command discarded.\n");
       continue;
@@ -313,7 +331,7 @@ async function main(): Promise<void> {
     console.log("Executing command...\n");
 
     try {
-      const result = await runCommand(normalizedCommand, COMMAND_EXEC_TIMEOUT_MS);
+      const result = await runCommand(candidateCommand, COMMAND_EXEC_TIMEOUT_MS);
 
       if (result.timedOut) {
         console.log(`\nCommand timed out after ${COMMAND_EXEC_TIMEOUT_MS}ms.`);

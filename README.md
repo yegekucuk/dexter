@@ -9,6 +9,8 @@ Dexter is a secure Linux command generator CLI powered by Ollama.
 - Supports custom model selection via `--model`.
 - Checks model availability and preloads only the selected runtime model.
 - Normalizes model output to a single command string.
+- Rewrites `>` / `>>` writes to `tee` / `tee -a` before security checks.
+- For non-empty existing files, Dexter backs up old content to `<file>.tmp` and still writes new content to the original file.
 - Applies strict security checks before execution.
 - Requires explicit user confirmation before running a command.
 - Exits after one confirmed execution, or exits immediately on `q`.

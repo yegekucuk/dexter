@@ -1,14 +1,112 @@
 #!/usr/bin/env node
 
 import inquirer from "inquirer";
-import { COMMAND_EXEC_TIMEOUT_MS, DEXTER_EXIT_KEY } from "./config.js";
+import {
+  COMMAND_EXEC_TIMEOUT_MS,
+  DEFAULT_OLLAMA_KEEP_ALIVE,
+  DEXTER_EXIT_KEY,
+} from "./config.js";
 import { runCommand } from "./executor/run.js";
-import { generateCommand } from "./generator/ollama.js";
+import { generateCommand, warmupModels } from "./generator/ollama.js";
 import { checkCommandSafety } from "./security/check.js";
 import { normalizeCommand } from "./security/normalize.js";
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+type SpinnerController = {
+  stop: (message: string) => void;
+};
+
+interface CliOptions {
+  warmupEnabled: boolean;
+  keepAlive: string;
+}
+
+function startLoadingBanner(message: string): SpinnerController {
+  const frames = ["[=     ]", "[==    ]", "[===   ]", "[ ==== ]", "[  === ]", "[   == ]", "[    = ]"];
+  let index = 0;
+
+  process.stdout.write(`${frames[index]} ${message}`);
+
+  const timer = setInterval(() => {
+    index = (index + 1) % frames.length;
+    process.stdout.write(`\r${frames[index]} ${message}`);
+  }, 120);
+
+  return {
+    stop(finalMessage: string): void {
+      clearInterval(timer);
+      process.stdout.write(`\r${finalMessage}\n`);
+    },
+  };
+}
+
+function parseCliOptions(argv: string[]): CliOptions {
+  let warmupEnabled = true;
+  let keepAlive = DEFAULT_OLLAMA_KEEP_ALIVE;
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i] ?? "";
+
+    if (arg === "--no-warmup") {
+      warmupEnabled = false;
+      continue;
+    }
+
+    if (arg.startsWith("--keep-alive=")) {
+      const value = arg.slice("--keep-alive=".length).trim();
+      if (!value) {
+        throw new Error("Flag '--keep-alive' must include a non-empty value.");
+      }
+
+      keepAlive = value;
+      continue;
+    }
+
+    if (arg === "--keep-alive") {
+      const next = (argv[i + 1] ?? "").trim();
+      if (!next || next.startsWith("-")) {
+        throw new Error("Flag '--keep-alive' requires a value.");
+      }
+
+      keepAlive = next;
+      i += 1;
+    }
+  }
+
+  return {
+    warmupEnabled,
+    keepAlive,
+  };
+}
+
+async function warmupOnStartup(options: CliOptions): Promise<void> {
+  if (!options.warmupEnabled) {
+    console.log("Skipping model warmup (--no-warmup).\n");
+    return;
+  }
+
+  const spinner = startLoadingBanner(
+    `Dexter is loading Ollama models into RAM (keep_alive: ${options.keepAlive})...`,
+  );
+
+  const results = await warmupModels(options.keepAlive);
+  const okCount = results.filter((item) => item.ok).length;
+
+  if (okCount === results.length) {
+    spinner.stop("[READY ] Models loaded into RAM.");
+    return;
+  }
+
+  spinner.stop("[WARN  ] Some models could not be preloaded.");
+  for (const result of results) {
+    if (!result.ok) {
+      console.log(`- ${result.model}: ${result.error ?? "Unknown error"}`);
+    }
+  }
+  console.log("");
 }
 
 async function promptInput(): Promise<string> {
@@ -39,7 +137,9 @@ async function promptConfirmation(command: string): Promise<boolean> {
 }
 
 async function main(): Promise<void> {
+  const options = parseCliOptions(process.argv.slice(2));
   console.log("Dexter - Secure Linux Command Generator\n");
+  await warmupOnStartup(options);
 
   while (true) {
     const request = await promptInput();

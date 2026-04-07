@@ -6,6 +6,7 @@ Dexter is a secure Linux command generator CLI powered by Ollama.
 
 - Turns natural-language Linux requests into shell commands.
 - Uses `qwen3.5:2b` with fallback to `qwen3.5:0.8b`.
+- Preloads both models into RAM at startup with configurable `keep_alive`.
 - Normalizes model output to a single command string.
 - Applies strict security checks before execution.
 - Requires explicit user confirmation before running a command.
@@ -41,6 +42,24 @@ npm install
 npm run dev
 ```
 
+Skip warmup:
+
+```bash
+npm run dev -- --no-warmup
+```
+
+Pass keep-alive directly as a string:
+
+```bash
+npm run dev -- --keep-alive 15m
+```
+
+or:
+
+```bash
+npm run dev -- --keep-alive="2h"
+```
+
 Production build:
 
 ```bash
@@ -57,3 +76,16 @@ npm test
 ## Optional environment variables
 
 - `DEXTER_OLLAMA_URL`: override Ollama base URL (default: `http://localhost:11434`)
+
+## Startup warmup
+
+On startup, Dexter calls Ollama `/api/generate` for each configured model with:
+
+```json
+{
+  "model": "<configured-model>",
+  "keep_alive": "<keep-alive-flag-or-default>"
+}
+```
+
+Defaults to `10m`, configurable via `--keep-alive <string>`, and sent as-is to Ollama.

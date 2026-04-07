@@ -2,6 +2,7 @@ import {
   OLLAMA_BASE_URL,
   OLLAMA_MODELS,
   OLLAMA_REQUEST_TIMEOUT_MS,
+  OLLAMA_WARMUP_TIMEOUT_MS,
 } from "../config.js";
 import { buildUserPrompt, DEXTER_SYSTEM_PROMPT } from "./prompt.js";
 
@@ -9,12 +10,70 @@ interface OllamaGenerateResponse {
   response?: string;
 }
 
+interface WarmupResult {
+  model: string;
+  ok: boolean;
+  error?: string;
+}
+
+function withTimeoutSignal(timeoutMs: number): {
+  signal: AbortSignal;
+  clear: () => void;
+} {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  return {
+    signal: controller.signal,
+    clear: () => clearTimeout(timeout),
+  };
+}
+
+async function pingModelKeepAlive(model: string, keepAlive: string): Promise<void> {
+  const timed = withTimeoutSignal(OLLAMA_WARMUP_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        keep_alive: keepAlive,
+      }),
+      signal: timed.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`status ${response.status}`);
+    }
+  } finally {
+    timed.clear();
+  }
+}
+
+export async function warmupModels(keepAlive: string): Promise<WarmupResult[]> {
+  const results: WarmupResult[] = [];
+
+  for (const model of OLLAMA_MODELS) {
+    try {
+      await pingModelKeepAlive(model, keepAlive);
+      results.push({ model, ok: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      results.push({ model, ok: false, error: message });
+    }
+  }
+
+  return results;
+}
+
 async function generateWithModel(
   model: string,
   userInput: string,
 ): Promise<string> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), OLLAMA_REQUEST_TIMEOUT_MS);
+  const timed = withTimeoutSignal(OLLAMA_REQUEST_TIMEOUT_MS);
 
   try {
     const response = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
@@ -28,7 +87,7 @@ async function generateWithModel(
         system: DEXTER_SYSTEM_PROMPT,
         stream: false,
       }),
-      signal: controller.signal,
+      signal: timed.signal,
     });
 
     if (!response.ok) {
@@ -44,7 +103,7 @@ async function generateWithModel(
 
     return output;
   } finally {
-    clearTimeout(timeout);
+    timed.clear();
   }
 }
 

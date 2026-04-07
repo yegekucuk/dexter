@@ -10,6 +10,7 @@ import {
 import { runCommand } from "./executor/run.js";
 import {
   generateCommand,
+  generateWithoutInterpreters,
   resolvePreferredModel,
   warmupModels,
 } from "./generator/ollama.js";
@@ -19,6 +20,12 @@ import { rewriteRedirectionToTee } from "./security/redirection.js";
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isInterpreterBlocked(reasons: string[]): boolean {
+  return reasons.some((reason) =>
+    /Command '(python|python3|perl|ruby|node)' is blocked by policy\./i.test(reason)
+  );
 }
 
 type SpinnerController = {
@@ -293,10 +300,25 @@ async function main(): Promise<void> {
       continue;
     }
 
-    const normalizedCommand = normalizeCommand(rawCommand);
-    const rewritten = await rewriteRedirectionToTee(normalizedCommand);
-    const candidateCommand = rewritten.command;
-    const safety = checkCommandSafety(candidateCommand);
+    let normalizedCommand = normalizeCommand(rawCommand);
+    let rewritten = await rewriteRedirectionToTee(normalizedCommand);
+    let candidateCommand = rewritten.command;
+    let safety = checkCommandSafety(candidateCommand);
+
+    if (!safety.safe && isInterpreterBlocked(safety.reasons)) {
+      console.log("Blocked interpreter command generated. Retrying with shell-only + tee instructions...\n");
+
+      try {
+        const retryRaw = await generateWithoutInterpreters(request, sessionOptions.models);
+        normalizedCommand = normalizeCommand(retryRaw);
+        rewritten = await rewriteRedirectionToTee(normalizedCommand);
+        candidateCommand = rewritten.command;
+        safety = checkCommandSafety(candidateCommand);
+      } catch (error) {
+        console.log(`Retry generation failed: ${formatError(error)}\n`);
+        continue;
+      }
+    }
 
     if (!safety.safe) {
       console.log("Command blocked by security policy:");

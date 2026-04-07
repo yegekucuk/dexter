@@ -7,10 +7,22 @@ export const DEXTER_SYSTEM_PROMPT = [
   "Keep the command minimal and safe.",
 ].join(" ");
 
-export function buildUserPrompt(input: string): string {
-  return [
+export const NO_INTERPRETER_RETRY_SYSTEM_PROMPT = [
+  "Never use interpreter commands: python, python3, perl, ruby, node.",
+  "For file writing requests, generate shell-only commands using tee (or tee -a).",
+  "Prefer printf or cat piped to tee when writing file content.",
+].join(" ");
+
+export function buildUserPrompt(input: string, extraInstruction?: string): string {
+  const lines = [
     "User request:",
     input.trim(),
     "Output only the command.",
-  ].join("\n");
+  ];
+
+  if (extraInstruction?.trim()) {
+    lines.push(extraInstruction.trim());
+  }
+
+  return lines.join("\n");
 }

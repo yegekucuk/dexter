@@ -42,6 +42,24 @@ npm install
 npm run dev
 ```
 
+Install as global `dexter` command:
+
+```bash
+npm run link:global
+```
+
+Then run:
+
+```bash
+dexter
+```
+
+Remove global link:
+
+```bash
+npm run unlink:global
+```
+
 Skip warmup:
 
 ```bash

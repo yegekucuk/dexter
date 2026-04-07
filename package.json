@@ -7,10 +7,16 @@
   "bin": {
     "dexter": "dist/cli.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "dev": "tsx src/cli.ts",
     "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
     "start": "node dist/cli.js",
+    "link:global": "npm run build && npm link",
+    "unlink:global": "npm unlink -g dexter",
     "test": "vitest run",
     "test:watch": "vitest"
   },

@@ -1,0 +1,117 @@
+#!/usr/bin/env node
+
+import inquirer from "inquirer";
+import { COMMAND_EXEC_TIMEOUT_MS, DEXTER_EXIT_KEY } from "./config.js";
+import { runCommand } from "./executor/run.js";
+import { generateCommand } from "./generator/ollama.js";
+import { checkCommandSafety } from "./security/check.js";
+import { normalizeCommand } from "./security/normalize.js";
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function promptInput(): Promise<string> {
+  const answer = await inquirer.prompt<{ request: string }>([
+    {
+      type: "input",
+      name: "request",
+      message: "Describe the Linux command you need (or q to quit):",
+    },
+  ]);
+
+  return answer.request.trim();
+}
+
+async function promptConfirmation(command: string): Promise<boolean> {
+  console.log(`\nGenerated command:\n${command}\n`);
+
+  const answer = await inquirer.prompt<{ confirm: boolean }>([
+    {
+      type: "confirm",
+      name: "confirm",
+      message: "Execute this command?",
+      default: false,
+    },
+  ]);
+
+  return answer.confirm;
+}
+
+async function main(): Promise<void> {
+  console.log("Dexter - Secure Linux Command Generator\n");
+
+  while (true) {
+    const request = await promptInput();
+
+    if (!request) {
+      console.log("Please provide a request or type q to exit.\n");
+      continue;
+    }
+
+    if (request.toLowerCase() === DEXTER_EXIT_KEY) {
+      console.log("Bye.");
+      return;
+    }
+
+    let rawCommand: string;
+    try {
+      rawCommand = await generateCommand(request);
+    } catch (error) {
+      console.log(`Command generation failed: ${formatError(error)}\n`);
+      continue;
+    }
+
+    const normalizedCommand = normalizeCommand(rawCommand);
+    const safety = checkCommandSafety(normalizedCommand);
+
+    if (!safety.safe) {
+      console.log("Command blocked by security policy:");
+      for (const reason of safety.reasons) {
+        console.log(`- ${reason}`);
+      }
+      console.log("");
+      continue;
+    }
+
+    const confirmed = await promptConfirmation(normalizedCommand);
+    if (!confirmed) {
+      console.log("Command discarded.\n");
+      continue;
+    }
+
+    console.log("Executing command...\n");
+
+    try {
+      const result = await runCommand(normalizedCommand, COMMAND_EXEC_TIMEOUT_MS);
+
+      if (result.timedOut) {
+        console.log(`\nCommand timed out after ${COMMAND_EXEC_TIMEOUT_MS}ms.`);
+      } else if (result.exitCode === 0) {
+        console.log("\nCommand completed successfully.");
+      } else {
+        console.log(
+          `\nCommand finished with exit code ${String(result.exitCode)}${
+            result.signal ? ` (signal: ${result.signal})` : ""
+          }.`,
+        );
+      }
+    } catch (error) {
+      console.log(`\nCommand execution failed: ${formatError(error)}`);
+    }
+
+    console.log("Exiting after one execution.");
+    return;
+  }
+}
+
+main().catch((error) => {
+  const message = formatError(error);
+  if (message.toLowerCase().includes("force closed")) {
+    console.log("\nBye.");
+    process.exit(0);
+  }
+
+  console.error(`Unexpected error: ${message}`);
+  process.exit(1);
+});

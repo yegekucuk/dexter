@@ -138,7 +138,6 @@ async function promptConfirmation(command: string): Promise<boolean> {
 
 async function main(): Promise<void> {
   const options = parseCliOptions(process.argv.slice(2));
-  console.log("Dexter - Secure Linux Command Generator\n");
   await warmupOnStartup(options);
 
   while (true) {

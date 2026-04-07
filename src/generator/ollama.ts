@@ -1,6 +1,7 @@
 import {
   OLLAMA_BASE_URL,
   DEFAULT_OLLAMA_MODELS,
+  OLLAMA_MODEL_CHECK_TIMEOUT_MS,
   OLLAMA_REQUEST_TIMEOUT_MS,
   OLLAMA_WARMUP_TIMEOUT_MS,
 } from "../config.js";
@@ -14,6 +15,21 @@ interface WarmupResult {
   model: string;
   ok: boolean;
   error?: string;
+}
+
+interface OllamaTagItem {
+  name?: string;
+  model?: string;
+}
+
+interface OllamaTagsResponse {
+  models?: OllamaTagItem[];
+}
+
+export interface ResolvedModelSelection {
+  selected: string;
+  primaryAvailable: boolean;
+  fallbackAvailable: boolean;
 }
 
 function withTimeoutSignal(timeoutMs: number): {
@@ -70,6 +86,59 @@ export async function warmupModels(
   }
 
   return results;
+}
+
+export async function resolvePreferredModel(
+  primaryModel: string,
+  fallbackModel: string,
+): Promise<ResolvedModelSelection> {
+  const timed = withTimeoutSignal(OLLAMA_MODEL_CHECK_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${OLLAMA_BASE_URL}/api/tags`, {
+      method: "GET",
+      signal: timed.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Unable to check available models: status ${response.status}`);
+    }
+
+    const payload = (await response.json()) as OllamaTagsResponse;
+    const listed = (payload.models ?? [])
+      .flatMap((entry) => [entry.name, entry.model])
+      .filter((item): item is string => Boolean(item))
+      .map((item) => item.trim().toLowerCase());
+
+    const availableSet = new Set(listed);
+    const primaryLower = primaryModel.trim().toLowerCase();
+    const fallbackLower = fallbackModel.trim().toLowerCase();
+
+    const primaryAvailable = availableSet.has(primaryLower);
+    const fallbackAvailable = availableSet.has(fallbackLower);
+
+    if (primaryAvailable) {
+      return {
+        selected: primaryModel,
+        primaryAvailable,
+        fallbackAvailable,
+      };
+    }
+
+    if (fallbackAvailable) {
+      return {
+        selected: fallbackModel,
+        primaryAvailable,
+        fallbackAvailable,
+      };
+    }
+
+    throw new Error(
+      `Neither primary model '${primaryModel}' nor fallback model '${fallbackModel}' is available in Ollama.`
+    );
+  } finally {
+    timed.clear();
+  }
 }
 
 async function generateWithModel(

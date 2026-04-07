@@ -8,7 +8,11 @@ import {
   DEXTER_EXIT_KEY,
 } from "./config.js";
 import { runCommand } from "./executor/run.js";
-import { generateCommand, warmupModels } from "./generator/ollama.js";
+import {
+  generateCommand,
+  resolvePreferredModel,
+  warmupModels,
+} from "./generator/ollama.js";
 import { checkCommandSafety } from "./security/check.js";
 import { normalizeCommand } from "./security/normalize.js";
 
@@ -24,6 +28,7 @@ interface CliOptions {
   warmupEnabled: boolean;
   keepAlive: string;
   models: string[];
+  customModelsProvided: boolean;
   showHelp: boolean;
 }
 
@@ -59,6 +64,7 @@ function parseCliOptions(argv: string[]): CliOptions {
       warmupEnabled: true,
       keepAlive: DEFAULT_OLLAMA_KEEP_ALIVE,
       models: [...DEFAULT_OLLAMA_MODELS],
+      customModelsProvided: false,
       showHelp: true,
     };
   }
@@ -132,6 +138,7 @@ function parseCliOptions(argv: string[]): CliOptions {
     warmupEnabled,
     keepAlive,
     models,
+    customModelsProvided: selectedModels.length > 0,
     showHelp: false,
   };
 }
@@ -185,6 +192,34 @@ async function warmupOnStartup(options: CliOptions): Promise<void> {
   console.log("");
 }
 
+async function resolveModelsForSession(options: CliOptions): Promise<string[]> {
+  if (options.customModelsProvided) {
+    return options.models;
+  }
+
+  const [primaryModel, fallbackModel] = options.models;
+  if (!primaryModel || !fallbackModel) {
+    return options.models;
+  }
+
+  const spinner = startLoadingBanner("Checking Ollama model availability...");
+
+  try {
+    const resolved = await resolvePreferredModel(primaryModel, fallbackModel);
+
+    if (resolved.selected === primaryModel) {
+      spinner.stop(`[READY ] Using primary model: ${primaryModel}`);
+    } else {
+      spinner.stop(`[READY ] Primary unavailable. Using fallback model: ${fallbackModel}`);
+    }
+
+    return [resolved.selected];
+  } catch (error) {
+    spinner.stop("[ERROR ] Unable to resolve a usable model.");
+    throw error;
+  }
+}
+
 async function promptInput(): Promise<string> {
   const answer = await inquirer.prompt<{ request: string }>([
     {
@@ -220,7 +255,21 @@ async function main(): Promise<void> {
     return;
   }
 
-  await warmupOnStartup(options);
+  let sessionModels: string[];
+
+  try {
+    sessionModels = await resolveModelsForSession(options);
+  } catch (error) {
+    console.error(`Model resolution failed: ${formatError(error)}`);
+    process.exit(1);
+  }
+
+  const sessionOptions: CliOptions = {
+    ...options,
+    models: sessionModels,
+  };
+
+  await warmupOnStartup(sessionOptions);
 
   while (true) {
     const request = await promptInput();
@@ -237,7 +286,7 @@ async function main(): Promise<void> {
 
     let rawCommand: string;
     try {
-      rawCommand = await generateCommand(request, options.models);
+      rawCommand = await generateCommand(request, sessionOptions.models);
     } catch (error) {
       console.log(`Command generation failed: ${formatError(error)}\n`);
       continue;

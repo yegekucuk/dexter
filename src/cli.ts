@@ -2,6 +2,7 @@
 
 import inquirer from "inquirer";
 import { clearLine, cursorTo } from "node:readline";
+import { styleText } from "node:util";
 import {
   COMMAND_EXEC_TIMEOUT_MS,
   DEXTER_CLEAR_KEY,
@@ -9,6 +10,7 @@ import {
   DEFAULT_OLLAMA_MODELS,
   DEXTER_EXIT_KEY,
   DEXTER_HELP_KEY,
+  DEXTER_HELP_SHORT_KEY,
   DEXTER_HISTORY_KEY,
   DEXTER_HISTORY_WINDOW,
 } from "./config.js";
@@ -51,6 +53,8 @@ interface SessionTurn {
   command: string;
   status: string;
 }
+
+const REQUEST_PLACEHOLDER = "Describe the command you need (/? for help)";
 
 function parseModelValue(rawValue: string): string[] {
   return rawValue
@@ -209,7 +213,7 @@ Examples:
   dexter --keep-alive="2h"
 
 Session commands:
-  ${DEXTER_HELP_KEY}                  Show available session commands
+  ${DEXTER_HELP_KEY}, ${DEXTER_HELP_SHORT_KEY}            Show available session commands
   ${DEXTER_HISTORY_KEY}               Show in-memory conversation log
   ${DEXTER_CLEAR_KEY}                 Clear in-memory conversation log
   ${DEXTER_EXIT_KEY}                  Quit Dexter
@@ -276,7 +280,21 @@ async function promptInput(): Promise<string> {
     {
       type: "input",
       name: "request",
-      message: `Describe the Linux command you need (${DEXTER_EXIT_KEY} to quit):`,
+      message: "",
+      theme: {
+        prefix: styleText("cyan", ">>>"),
+        style: {
+          answer: (text: string): string => text,
+          message: (text: string): string => text,
+        },
+      },
+      transformer: (input: string, { isFinal }: { isFinal: boolean }): string => {
+        if (!isFinal && input.length === 0) {
+          return styleText("dim", REQUEST_PLACEHOLDER);
+        }
+
+        return input;
+      },
     },
   ]);
 
@@ -310,7 +328,7 @@ function printSessionHistory(history: SessionTurn[]): void {
 
 function printSessionCommands(): void {
   console.log("\nSession commands:\n");
-  console.log(`${DEXTER_HELP_KEY}                  Show available session commands`);
+  console.log(`${DEXTER_HELP_KEY}, ${DEXTER_HELP_SHORT_KEY}            Show available session commands`);
   console.log(`${DEXTER_HISTORY_KEY}               Show in-memory conversation log`);
   console.log(`${DEXTER_CLEAR_KEY}                 Clear in-memory conversation log`);
   console.log(`${DEXTER_EXIT_KEY}                  Quit Dexter`);
@@ -377,7 +395,7 @@ async function main(): Promise<void> {
       continue;
     }
 
-    if (loweredRequest === DEXTER_HELP_KEY) {
+    if (loweredRequest === DEXTER_HELP_KEY || loweredRequest === DEXTER_HELP_SHORT_KEY) {
       printSessionCommands();
       continue;
     }

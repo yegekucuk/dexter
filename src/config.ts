@@ -1,5 +1,6 @@
 export const DEXTER_EXIT_KEY = "/bye";
 export const DEXTER_HELP_KEY = "/help";
+export const DEXTER_HELP_SHORT_KEY = "/?";
 export const DEXTER_HISTORY_KEY = "/history";
 export const DEXTER_CLEAR_KEY = "/clear";
 export const DEXTER_HISTORY_WINDOW = 12;

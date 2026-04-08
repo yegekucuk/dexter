@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import inquirer from "inquirer";
+import { clearLine, cursorTo } from "node:readline";
 import {
   COMMAND_EXEC_TIMEOUT_MS,
   DEXTER_CLEAR_KEY,
@@ -61,17 +62,43 @@ function parseModelValue(rawValue: string): string[] {
 function startLoadingBanner(message: string): SpinnerController {
   const frames = ["[=     ]", "[==    ]", "[===   ]", "[ ==== ]", "[  === ]", "[   == ]", "[    = ]"];
   let index = 0;
-  process.stdout.write(`${frames[index]} ${message}`);
+  const useInteractiveRender = Boolean(process.stdout.isTTY);
+
+  if (!useInteractiveRender) {
+    console.log(`${frames[index]} ${message}`);
+
+    return {
+      stop(finalMessage: string): void {
+        console.log(finalMessage);
+      },
+    };
+  }
+
+  const render = (text: string): void => {
+    clearLine(process.stdout, 0);
+    cursorTo(process.stdout, 0);
+    process.stdout.write(text);
+  };
+
+  render(`${frames[index]} ${message}`);
 
   const timer = setInterval(() => {
     index = (index + 1) % frames.length;
-    process.stdout.write(`\r${frames[index]} ${message}`);
+    render(`${frames[index]} ${message}`);
   }, 120);
+
+  let stopped = false;
 
   return {
     stop(finalMessage: string): void {
+      if (stopped) {
+        return;
+      }
+
+      stopped = true;
       clearInterval(timer);
-      process.stdout.write(`\r${finalMessage}\n`);
+      render(finalMessage);
+      process.stdout.write("\n");
     },
   };
 }

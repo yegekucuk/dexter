@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import inquirer from "inquirer";
-import { clearLine, cursorTo } from "node:readline";
+import { createPrompt, isEnterKey, useKeypress, useState } from "@inquirer/core";
+import { clearLine, cursorTo, moveCursor } from "node:readline";
 import { styleText } from "node:util";
 import {
   COMMAND_EXEC_TIMEOUT_MS,
@@ -54,7 +55,46 @@ interface SessionTurn {
   status: string;
 }
 
+interface RunDecisionPromptConfig {
+  command: string;
+}
+
 const REQUEST_PLACEHOLDER = "Describe the command you need (/? for help)";
+
+const promptRunDecision = createPrompt<boolean, RunDecisionPromptConfig>((config, done) => {
+  const [selected, setSelected] = useState<"yes" | "no">("no");
+
+  useKeypress((key, rl) => {
+    const keyName = key.name.toLowerCase();
+
+    if (isEnterKey(key)) {
+      done(selected === "yes");
+      return;
+    }
+
+    if (keyName === "left" || keyName === "up" || keyName === "y") {
+      rl.clearLine(0);
+      setSelected("yes");
+      return;
+    }
+
+    if (keyName === "right" || keyName === "down" || keyName === "n") {
+      rl.clearLine(0);
+      setSelected("no");
+      return;
+    }
+
+    if (keyName === "tab" || keyName === "space") {
+      rl.clearLine(0);
+      setSelected(selected === "yes" ? "no" : "yes");
+    }
+  });
+
+  const yesMarker = selected === "yes" ? styleText("cyan", "(o)") : "( )";
+  const noMarker = selected === "no" ? styleText("cyan", "(o)") : "( )";
+
+  return `command: ${config.command}\nrun? ${yesMarker} Yes  ${noMarker} No`;
+});
 
 function parseModelValue(rawValue: string): string[] {
   return rawValue
@@ -335,19 +375,36 @@ function printSessionCommands(): void {
   console.log("");
 }
 
+function clearSubmittedRequestLine(request: string): void {
+  if (!process.stdout.isTTY) {
+    return;
+  }
+
+  const columns = process.stdout.columns ?? 80;
+  const promptWidth = 4;
+  const renderedLineCount = Math.max(1, Math.ceil((promptWidth + request.length) / columns));
+
+  moveCursor(process.stdout, 0, -renderedLineCount);
+
+  for (let index = 0; index < renderedLineCount; index += 1) {
+    clearLine(process.stdout, 0);
+    cursorTo(process.stdout, 0);
+
+    if (index < renderedLineCount - 1) {
+      moveCursor(process.stdout, 0, 1);
+    }
+  }
+
+  moveCursor(process.stdout, 0, -(renderedLineCount - 1));
+}
+
 async function promptConfirmation(command: string): Promise<boolean> {
-  console.log(`\nGenerated command:\n${command}\n`);
-
-  const answer = await inquirer.prompt<{ confirm: boolean }>([
+  return await promptRunDecision(
+    { command },
     {
-      type: "confirm",
-      name: "confirm",
-      message: "Execute this command?",
-      default: false,
+      clearPromptOnDone: true,
     },
-  ]);
-
-  return answer.confirm;
+  );
 }
 
 async function main(): Promise<void> {
@@ -466,36 +523,26 @@ async function main(): Promise<void> {
 
     const confirmed = await promptConfirmation(candidateCommand);
     if (!confirmed) {
-      turn.status = "discarded";
-      sessionHistory.push(turn);
-      console.log("Command discarded.\n");
+      clearSubmittedRequestLine(request);
       continue;
     }
-
-    console.log("Executing command...\n");
 
     try {
       const result = await runCommand(candidateCommand, COMMAND_EXEC_TIMEOUT_MS);
 
       if (result.timedOut) {
         turn.status = "timeout";
-        console.log(`\nCommand timed out after ${COMMAND_EXEC_TIMEOUT_MS}ms.`);
+        console.log(`Command timed out after ${COMMAND_EXEC_TIMEOUT_MS}ms.`);
       } else if (result.exitCode === 0) {
         turn.status = "success";
-        console.log("\nCommand completed successfully.");
       } else {
         turn.status = `failed(exit=${String(result.exitCode)}${
           result.signal ? `,signal=${result.signal}` : ""
         })`;
-        console.log(
-          `\nCommand finished with exit code ${String(result.exitCode)}${
-            result.signal ? ` (signal: ${result.signal})` : ""
-          }.`,
-        );
       }
     } catch (error) {
       turn.status = `execution_error: ${formatError(error)}`;
-      console.log(`\nCommand execution failed: ${formatError(error)}`);
+      console.log(`Command execution failed: ${formatError(error)}`);
     }
 
     sessionHistory.push(turn);

@@ -7,6 +7,7 @@ import {
   DEFAULT_OLLAMA_KEEP_ALIVE,
   DEFAULT_OLLAMA_MODELS,
   DEXTER_EXIT_KEY,
+  DEXTER_HELP_KEY,
   DEXTER_HISTORY_KEY,
   DEXTER_HISTORY_WINDOW,
 } from "./config.js";
@@ -60,7 +61,6 @@ function parseModelValue(rawValue: string): string[] {
 function startLoadingBanner(message: string): SpinnerController {
   const frames = ["[=     ]", "[==    ]", "[===   ]", "[ ==== ]", "[  === ]", "[   == ]", "[    = ]"];
   let index = 0;
-
   process.stdout.write(`${frames[index]} ${message}`);
 
   const timer = setInterval(() => {
@@ -182,6 +182,7 @@ Examples:
   dexter --keep-alive="2h"
 
 Session commands:
+  ${DEXTER_HELP_KEY}                  Show available session commands
   ${DEXTER_HISTORY_KEY}               Show in-memory conversation log
   ${DEXTER_CLEAR_KEY}                 Clear in-memory conversation log
   ${DEXTER_EXIT_KEY}                  Quit Dexter
@@ -280,6 +281,15 @@ function printSessionHistory(history: SessionTurn[]): void {
   console.log("");
 }
 
+function printSessionCommands(): void {
+  console.log("\nSession commands:\n");
+  console.log(`${DEXTER_HELP_KEY}                  Show available session commands`);
+  console.log(`${DEXTER_HISTORY_KEY}               Show in-memory conversation log`);
+  console.log(`${DEXTER_CLEAR_KEY}                 Clear in-memory conversation log`);
+  console.log(`${DEXTER_EXIT_KEY}                  Quit Dexter`);
+  console.log("");
+}
+
 async function promptConfirmation(command: string): Promise<boolean> {
   console.log(`\nGenerated command:\n${command}\n`);
 
@@ -337,6 +347,11 @@ async function main(): Promise<void> {
 
     if (loweredRequest === DEXTER_HISTORY_KEY) {
       printSessionHistory(sessionHistory);
+      continue;
+    }
+
+    if (loweredRequest === DEXTER_HELP_KEY) {
+      printSessionCommands();
       continue;
     }
 

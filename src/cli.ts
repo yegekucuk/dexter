@@ -62,7 +62,7 @@ interface RunDecisionPromptConfig {
 const REQUEST_PLACEHOLDER = "Describe the command you need (/? for help)";
 
 const promptRunDecision = createPrompt<boolean, RunDecisionPromptConfig>((config, done) => {
-  const [selected, setSelected] = useState<"yes" | "no">("no");
+  const [selected, setSelected] = useState<"yes" | "no">("yes");
 
   useKeypress((key, rl) => {
     const keyName = key.name.toLowerCase();
@@ -90,10 +90,12 @@ const promptRunDecision = createPrompt<boolean, RunDecisionPromptConfig>((config
     }
   });
 
-  const yesMarker = selected === "yes" ? styleText("cyan", "(o)") : "( )";
-  const noMarker = selected === "no" ? styleText("cyan", "(o)") : "( )";
+  const yesMarker = selected === "yes" ? styleText("green", "◉") : styleText("dim", "◯");
+  const noMarker = selected === "no" ? styleText("green", "◉") : styleText("dim", "◯");
+  const yesLabel = selected === "yes" ? styleText("bold", "Yes") : styleText("dim", "Yes");
+  const noLabel = selected === "no" ? styleText("bold", "No") : styleText("dim", "No");
 
-  return `command: ${config.command}\nrun? ${yesMarker} Yes  ${noMarker} No`;
+  return `command: ${config.command}\nrun? ${yesMarker} ${yesLabel}  ${noMarker} ${noLabel}`;
 });
 
 function parseModelValue(rawValue: string): string[] {

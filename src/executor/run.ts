@@ -31,6 +31,28 @@ export async function runCommand(
     });
 
     let timedOut = false;
+    let settled = false;
+    let exitCode: number | null = null;
+    let signal: NodeJS.Signals | null = null;
+
+    const resolveOnce = (result: RunResult): void => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      resolve(result);
+    };
+
+    const rejectOnce = (error: unknown): void => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      reject(error);
+    };
+
     const timeout = setTimeout(() => {
       timedOut = true;
       child.kill("SIGTERM");
@@ -44,14 +66,19 @@ export async function runCommand(
 
     child.on("error", (error) => {
       clearTimeout(timeout);
-      reject(error);
+      rejectOnce(error);
     });
 
-    child.on("exit", (exitCode, signal) => {
+    child.on("exit", (code, sig) => {
+      exitCode = code;
+      signal = sig;
+    });
+
+    child.on("close", (code, sig) => {
       clearTimeout(timeout);
-      resolve({
-        exitCode,
-        signal,
+      resolveOnce({
+        exitCode: exitCode ?? code,
+        signal: signal ?? sig,
         timedOut,
         output: outputStr.length > 2000 ? outputStr.slice(-2000) : outputStr,
       });

@@ -6,14 +6,15 @@ import {
   OLLAMA_WARMUP_TIMEOUT_MS,
 } from "../config.js";
 import {
-  buildUserPrompt,
+  buildChatMessages,
+  type OllamaMessage,
   DEXTER_SYSTEM_PROMPT,
   NO_INTERPRETER_RETRY_SYSTEM_PROMPT,
   type PromptHistoryTurn,
 } from "./prompt.js";
 
 interface OllamaGenerateResponse {
-  response?: string;
+  message?: OllamaMessage;
 }
 
 interface WarmupResult {
@@ -158,18 +159,18 @@ async function generateWithModel(
   const timed = withTimeoutSignal(OLLAMA_REQUEST_TIMEOUT_MS);
 
   try {
-    const response = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
+    const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
         model,
-        prompt: buildUserPrompt(userInput, {
+        messages: buildChatMessages(userInput, {
           extraInstruction: options?.extraInstruction,
+          extraSystemPrompt: options?.extraSystemPrompt,
           history: options?.history,
         }),
-        system: [DEXTER_SYSTEM_PROMPT, options?.extraSystemPrompt].filter(Boolean).join(" "),
         stream: false,
       }),
       signal: timed.signal,
@@ -180,7 +181,7 @@ async function generateWithModel(
     }
 
     const payload = (await response.json()) as OllamaGenerateResponse;
-    const output = payload.response?.trim();
+    const output = payload.message?.content?.trim();
 
     if (!output) {
       throw new Error(`Model ${model} returned empty response`);

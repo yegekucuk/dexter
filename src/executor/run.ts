@@ -4,6 +4,7 @@ export interface RunResult {
   exitCode: number | null;
   signal: NodeJS.Signals | null;
   timedOut: boolean;
+  output?: string;
 }
 
 export async function runCommand(
@@ -12,7 +13,21 @@ export async function runCommand(
 ): Promise<RunResult> {
   return await new Promise<RunResult>((resolve, reject) => {
     const child = spawn("bash", ["-lc", command], {
-      stdio: "inherit",
+      stdio: ["inherit", "pipe", "pipe"],
+    });
+
+    let outputStr = "";
+
+    child.stdout?.on("data", (chunk: Buffer) => {
+      process.stdout.write(chunk);
+      outputStr += chunk.toString("utf8");
+      if (outputStr.length > 10000) outputStr = outputStr.slice(-2000);
+    });
+
+    child.stderr?.on("data", (chunk: Buffer) => {
+      process.stderr.write(chunk);
+      outputStr += chunk.toString("utf8");
+      if (outputStr.length > 10000) outputStr = outputStr.slice(-2000);
     });
 
     let timedOut = false;
@@ -38,6 +53,7 @@ export async function runCommand(
         exitCode,
         signal,
         timedOut,
+        output: outputStr.length > 2000 ? outputStr.slice(-2000) : outputStr,
       });
     });
   });

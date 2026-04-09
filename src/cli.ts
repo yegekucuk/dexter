@@ -53,6 +53,7 @@ interface SessionTurn {
   request: string;
   command: string;
   status: string;
+  output?: string;
 }
 
 interface RunDecisionPromptConfig {
@@ -542,6 +543,8 @@ async function main(): Promise<void> {
           result.signal ? `,signal=${result.signal}` : ""
         })`;
       }
+      
+      turn.output = result.output;
     } catch (error) {
       turn.status = `execution_error: ${formatError(error)}`;
       console.log(`Command execution failed: ${formatError(error)}`);

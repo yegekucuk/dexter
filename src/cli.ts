@@ -364,6 +364,18 @@ function printSessionHistory(history: SessionTurn[]): void {
     console.log(`[${index + 1}] request: ${turn.request}`);
     console.log(`    command: ${turn.command}`);
     console.log(`    status: ${turn.status}`);
+    
+    if (turn.output) {
+      const MAX_PREVIEW = 200;
+      let displayOutput = turn.output.trim();
+      
+      if (displayOutput.length > MAX_PREVIEW) {
+        displayOutput = displayOutput.slice(0, MAX_PREVIEW) + "...\n(output truncated for preview)";
+      }
+      
+      const indented = displayOutput.split("\n").join("\n            ");
+      console.log(`    output: ${indented}`);
+    }
   });
 
   console.log("");

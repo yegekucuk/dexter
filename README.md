@@ -16,7 +16,7 @@ Dexter is a secure Linux command generator CLI powered by Ollama.
 - Requires explicit user confirmation before running a command.
 - Runs as an interactive multi-turn session until you exit with `/bye`.
 - Keeps an in-memory session log (request, generated command, execution status).
-- Sends the last 12 turns of session context to Ollama for follow-up prompts.
+- Sends the last 12 turns (configurable via `--history-limit`) of session context to Ollama for follow-up prompts.
 - Supports `/help` (or `/?`) to list session commands, `/history` to inspect session memory, and `/clear` to reset it.
 
 ## Security defaults
@@ -111,6 +111,12 @@ or:
 
 ```bash
 npm run dev -- --keep-alive="2h"
+```
+
+Set session context window limit:
+
+```bash
+dexter --history-limit 20
 ```
 
 Production build:

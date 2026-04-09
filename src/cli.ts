@@ -47,6 +47,7 @@ interface CliOptions {
   models: string[];
   customModelsProvided: boolean;
   showHelp: boolean;
+  historyLimit: number;
 }
 
 interface SessionTurn {
@@ -158,11 +159,13 @@ function parseCliOptions(argv: string[]): CliOptions {
       models: [...DEFAULT_OLLAMA_MODELS],
       customModelsProvided: false,
       showHelp: true,
+      historyLimit: DEXTER_HISTORY_WINDOW,
     };
   }
 
   let warmupEnabled = true;
   let keepAlive = DEFAULT_OLLAMA_KEEP_ALIVE;
+  let historyLimit = DEXTER_HISTORY_WINDOW;
   const selectedModels: string[] = [];
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -170,6 +173,27 @@ function parseCliOptions(argv: string[]): CliOptions {
 
     if (arg === "--no-warmup") {
       warmupEnabled = false;
+      continue;
+    }
+
+    if (arg.startsWith("--history-limit=")) {
+      const value = arg.slice("--history-limit=".length).trim();
+      const parsed = parseInt(value, 10);
+      if (isNaN(parsed) || parsed < 0) {
+        throw new Error("Flag '--history-limit' must be a non-negative integer.");
+      }
+      historyLimit = parsed;
+      continue;
+    }
+
+    if (arg === "--history-limit") {
+      const next = (argv[i + 1] ?? "").trim();
+      const parsed = parseInt(next, 10);
+      if (!next || next.startsWith("-") || isNaN(parsed) || parsed < 0) {
+        throw new Error("Flag '--history-limit' requires a non-negative integer value.");
+      }
+      historyLimit = parsed;
+      i += 1;
       continue;
     }
 
@@ -232,6 +256,7 @@ function parseCliOptions(argv: string[]): CliOptions {
     models,
     customModelsProvided: selectedModels.length > 0,
     showHelp: false,
+    historyLimit,
   };
 }
 
@@ -246,6 +271,7 @@ Options:
   --no-warmup             Skip model preloading on startup
   --model <name[,name]>   Use custom model(s), in fallback order
   --keep-alive <string>   Pass keep_alive directly to Ollama warmup (default: ${DEFAULT_OLLAMA_KEEP_ALIVE})
+  --history-limit <num>   Context window limit in turns (default: ${DEXTER_HISTORY_WINDOW})
 
 Examples:
   dexter
@@ -254,6 +280,7 @@ Examples:
   dexter --model gemma4:e2b,qwen3.5:0.8b
   dexter --keep-alive 15m
   dexter --keep-alive="2h"
+  dexter --history-limit 20
 
 Session commands:
   ${DEXTER_HELP_KEY}, ${DEXTER_HELP_SHORT_KEY}            Show available session commands
@@ -344,12 +371,12 @@ async function promptInput(): Promise<string> {
   return answer.request.trim();
 }
 
-function buildPromptHistoryWindow(history: SessionTurn[]): PromptHistoryTurn[] {
-  if (history.length <= DEXTER_HISTORY_WINDOW) {
+function buildPromptHistoryWindow(history: SessionTurn[], limit: number): PromptHistoryTurn[] {
+  if (history.length <= limit) {
     return history;
   }
 
-  return history.slice(history.length - DEXTER_HISTORY_WINDOW);
+  return history.slice(history.length - limit);
 }
 
 function printSessionHistory(history: SessionTurn[]): void {
@@ -478,7 +505,7 @@ async function main(): Promise<void> {
       continue;
     }
 
-    const modelHistory = buildPromptHistoryWindow(sessionHistory);
+    const modelHistory = buildPromptHistoryWindow(sessionHistory, sessionOptions.historyLimit);
     let turn: SessionTurn = {
       request,
       command: "-",

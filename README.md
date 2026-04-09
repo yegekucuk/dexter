@@ -163,3 +163,7 @@ By default, Dexter uses:
 2. `qwen3.5:0.8b`
 
 You can override this order with `--model`.
+
+## License
+
+Developed by Yunus Ege Küçük. Licensed under [MIT](LICENSE).

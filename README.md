@@ -12,6 +12,7 @@ Dexter is a secure Linux command generator CLI powered by Ollama.
 - Rewrites `>` / `>>` writes to `tee` / `tee -a` before security checks.
 - For non-empty existing files, Dexter backs up old content to `<file>.tmp` and still writes new content to the original file.
 - If a blocked interpreter command is generated (python/node/perl/ruby), Dexter retries once with shell-only + `tee` guidance.
+- Supports `/help` (or `/?`) to list session commands, `/history` to inspect session memory, `/clear` to reset it, and `/sudo` to enable privileged commands.
 - Applies strict security checks before execution.
 - Requires explicit user confirmation before running a command.
 - Runs as an interactive multi-turn session until you exit with `/bye`.
@@ -23,13 +24,17 @@ Dexter is a secure Linux command generator CLI powered by Ollama.
 
 - Allowed chain operators: `&&`, `|`
 - Blocked operators/syntax: `;`, `||`, `>`, `>>`, `<`, backticks, `$(...)`, background `&`
-- Strict blocked command classes:
-  - privilege/escalation commands (`sudo`, `su`)
+- Always blocked (even with `/sudo`):
+  - shells and interpreters (`bash`, `sh`, `python`, `node`, `perl`, `ruby`, etc.)
   - filesystem/system mutation (`dd`, `mkfs*`, `mount`, `umount`, `chmod`, `chown`, `chattr`)
   - process/system shutdown control (`kill*`, `shutdown`, `reboot`, `poweroff`, `halt`)
   - user/firewall management (`useradd`, `usermod`, `passwd`, `iptables`, `nft`)
-  - package/container management (`apt`, `yum`, `dnf`, `pacman`, `docker`, `podman`, etc.)
-  - dangerous `rm -rf` targets
+  - dangerous `rm -rf` targets and critical system paths (`/`, `/etc`, `/boot`)
+- Normally blocked, allowed with `/sudo`:
+  - privilege escalation (`sudo`)
+  - package managers (`apt`, `apt-get`, `yum`, `dnf`, `pacman`, `zypper`, `apk`, `snap`, `flatpak`)
+  - container management (`docker`, `podman`)
+  - system control (`systemctl`)
 
 ## Requirements
 
@@ -64,11 +69,12 @@ dexter
 Session commands while running:
 
 ```text
-/help      Show available session commands
-/?         Show available session commands
-/history   Show in-memory conversation log
-/clear     Clear in-memory conversation log
-/bye       Quit Dexter
+/help              Show available session commands
+/?                 Show available session commands
+/sudo <request>    Run request with sudo/privileged commands enabled
+/history           Show in-memory conversation log
+/clear             Clear in-memory conversation log
+/bye               Quit Dexter
 ```
 
 Show help:

@@ -14,6 +14,7 @@ import {
   DEXTER_HELP_SHORT_KEY,
   DEXTER_HISTORY_KEY,
   DEXTER_HISTORY_WINDOW,
+  DEXTER_SUDO_KEY_PREFIX,
 } from "./config.js";
 import { runCommand } from "./executor/run.js";
 import {
@@ -35,6 +36,30 @@ function isInterpreterBlocked(reasons: string[]): boolean {
   return reasons.some((reason) =>
     /Command '(python|python3|perl|ruby|node)' is blocked by policy\./i.test(reason)
   );
+}
+
+/**
+ * Parse /sudo prefix from user input.
+ * Returns { allowSudo: boolean, cleanRequest: string }
+ * Example: "/sudo apt update" -> { allowSudo: true, cleanRequest: "apt update" }
+ */
+function parseSudoPrefix(input: string): { allowSudo: boolean; cleanRequest: string } {
+  const trimmed = input.trim();
+  const lowerTrimmed = trimmed.toLowerCase();
+
+  if (lowerTrimmed === DEXTER_SUDO_KEY_PREFIX) {
+    // Just "/sudo" with no request
+    return { allowSudo: false, cleanRequest: "" };
+  }
+
+  if (lowerTrimmed.startsWith(DEXTER_SUDO_KEY_PREFIX + " ")) {
+    // "/sudo <request>"
+    const cleanRequest = trimmed.slice(DEXTER_SUDO_KEY_PREFIX.length).trim();
+    return { allowSudo: true, cleanRequest };
+  }
+
+  // No /sudo prefix
+  return { allowSudo: false, cleanRequest: trimmed };
 }
 
 type SpinnerController = {
@@ -411,6 +436,7 @@ function printSessionHistory(history: SessionTurn[]): void {
 function printSessionCommands(): void {
   console.log("\nSession commands:\n");
   console.log(`${DEXTER_HELP_KEY}, ${DEXTER_HELP_SHORT_KEY}            Show available session commands`);
+  console.log(`${DEXTER_SUDO_KEY_PREFIX} <request>     Run request with sudo/privileged commands enabled`);
   console.log(`${DEXTER_HISTORY_KEY}               Show in-memory conversation log`);
   console.log(`${DEXTER_CLEAR_KEY}                 Clear in-memory conversation log`);
   console.log(`${DEXTER_EXIT_KEY}                  Quit Dexter`);
@@ -482,7 +508,18 @@ async function main(): Promise<void> {
       continue;
     }
 
-    const loweredRequest = request.toLowerCase();
+    // Parse /sudo prefix
+    const { allowSudo, cleanRequest } = parseSudoPrefix(request);
+
+    // Handle /sudo with no request
+    if (allowSudo && !cleanRequest) {
+      console.log(`Usage: ${DEXTER_SUDO_KEY_PREFIX} <request>\n`);
+      continue;
+    }
+
+    // Use cleanRequest for command generation (strips /sudo prefix)
+    const effectiveRequest = cleanRequest || request;
+    const loweredRequest = effectiveRequest.toLowerCase();
 
     if (loweredRequest === DEXTER_EXIT_KEY) {
       console.log("Bye.");
@@ -507,7 +544,7 @@ async function main(): Promise<void> {
 
     const modelHistory = buildPromptHistoryWindow(sessionHistory, sessionOptions.historyLimit);
     let turn: SessionTurn = {
-      request,
+      request: effectiveRequest,
       command: "-",
       status: "generation_failed",
     };
@@ -516,6 +553,7 @@ async function main(): Promise<void> {
     try {
       rawCommand = await generateCommand(request, sessionOptions.models, {
         history: modelHistory,
+        allowSudo,
       });
     } catch (error) {
       turn.status = `generation_failed: ${formatError(error)}`;
@@ -528,22 +566,23 @@ async function main(): Promise<void> {
     let rewritten = await rewriteRedirectionToTee(normalizedCommand);
     let candidateCommand = rewritten.command;
     turn.command = candidateCommand;
-    let safety = checkCommandSafety(candidateCommand);
+    let safety = checkCommandSafety(candidateCommand, { allowSudo });
 
     if (!safety.safe && isInterpreterBlocked(safety.reasons)) {
       console.log("Blocked interpreter command generated. Retrying with shell-only + tee instructions...\n");
 
       try {
         const retryRaw = await generateWithoutInterpreters(
-          request,
+          effectiveRequest,
           sessionOptions.models,
           modelHistory,
+          allowSudo,
         );
         normalizedCommand = normalizeCommand(retryRaw);
         rewritten = await rewriteRedirectionToTee(normalizedCommand);
         candidateCommand = rewritten.command;
         turn.command = candidateCommand;
-        safety = checkCommandSafety(candidateCommand);
+        safety = checkCommandSafety(candidateCommand, { allowSudo });
       } catch (error) {
         turn.status = `retry_generation_failed: ${formatError(error)}`;
         sessionHistory.push(turn);
@@ -565,7 +604,7 @@ async function main(): Promise<void> {
 
     const confirmed = await promptConfirmation(candidateCommand);
     if (!confirmed) {
-      clearSubmittedRequestLine(request);
+      clearSubmittedRequestLine(effectiveRequest);
       continue;
     }
 

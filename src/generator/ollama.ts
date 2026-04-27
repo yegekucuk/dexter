@@ -154,6 +154,7 @@ async function generateWithModel(
     extraInstruction?: string;
     extraSystemPrompt?: string;
     history?: PromptHistoryTurn[];
+    allowSudo?: boolean;
   },
 ): Promise<string> {
   const timed = withTimeoutSignal(OLLAMA_REQUEST_TIMEOUT_MS);
@@ -200,8 +201,14 @@ export async function generateCommand(
     extraInstruction?: string;
     extraSystemPrompt?: string;
     history?: PromptHistoryTurn[];
+    allowSudo?: boolean;
   },
 ): Promise<string> {
+  const allowSudo = options?.allowSudo ?? false;
+  const sudoSystemPrompt = allowSudo
+    ? "Sudo and system-level commands are allowed, but destructive/irreversible/system-breaking operations must never be used."
+    : "Never use sudo or system-level package/container managers (apt, dnf, yum, docker, ...).";
+
   const errors: string[] = [];
 
   for (const model of models) {
@@ -211,8 +218,11 @@ export async function generateCommand(
         userInput,
         {
           extraInstruction: options?.extraInstruction,
-          extraSystemPrompt: options?.extraSystemPrompt,
+          extraSystemPrompt: [options?.extraSystemPrompt, sudoSystemPrompt]
+            .filter(Boolean)
+            .join(" "),
           history: options?.history,
+          allowSudo,
         },
       );
     } catch (error) {
@@ -232,11 +242,13 @@ export async function generateWithoutInterpreters(
   userInput: string,
   models: string[] = [...DEFAULT_OLLAMA_MODELS],
   history?: PromptHistoryTurn[],
+  allowSudo?: boolean,
 ): Promise<string> {
   return await generateCommand(userInput, models, {
     extraInstruction:
       "Important: do not use python/python3/perl/ruby/node. Use shell tools and tee for file writes.",
     extraSystemPrompt: NO_INTERPRETER_RETRY_SYSTEM_PROMPT,
     history,
+    allowSudo,
   });
 }

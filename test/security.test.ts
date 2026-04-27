@@ -32,10 +32,104 @@ describe("checkCommandSafety", () => {
     expect(result.safe).toBe(true);
   });
 
-  test("blocks banned base command", () => {
+  test("blocks sudo by default", () => {
     const result = checkCommandSafety("sudo ls /root");
     expect(result.safe).toBe(false);
     expect(result.reasons.join(" ")).toContain("blocked by policy");
+  });
+
+  test("allows sudo with allowSudo option", () => {
+    const result = checkCommandSafety("sudo ls /root", { allowSudo: true });
+    expect(result.safe).toBe(true);
+  });
+
+  test("blocks sudo rm -rf / even with allowSudo", () => {
+    const result = checkCommandSafety("sudo rm -rf /", { allowSudo: true });
+    expect(result.safe).toBe(false);
+    expect(result.reasons.join(" ")).toContain("Dangerous 'rm -rf'");
+  });
+
+  test("blocks sudo dd even with allowSudo", () => {
+    const result = checkCommandSafety("sudo dd if=/dev/zero of=/dev/sda", { allowSudo: true });
+    expect(result.safe).toBe(false);
+    expect(result.reasons.join(" ")).toContain("always banned");
+  });
+
+  test("allows sudo apt update with allowSudo", () => {
+    const result = checkCommandSafety("sudo apt update", { allowSudo: true });
+    expect(result.safe).toBe(true);
+  });
+
+  test("allows sudo docker ps with allowSudo", () => {
+    const result = checkCommandSafety("sudo docker ps", { allowSudo: true });
+    expect(result.safe).toBe(true);
+  });
+
+  test("allows sudo systemctl status with allowSudo", () => {
+    const result = checkCommandSafety("sudo systemctl status nginx", { allowSudo: true });
+    expect(result.safe).toBe(true);
+  });
+
+  test("blocks sudo -i (interactive shell)", () => {
+    const result = checkCommandSafety("sudo -i", { allowSudo: true });
+    expect(result.safe).toBe(false);
+    expect(result.reasons.join(" ")).toContain("Invalid or unsafe sudo usage");
+  });
+
+  test("blocks sudo -s (shell)", () => {
+    const result = checkCommandSafety("sudo -s", { allowSudo: true });
+    expect(result.safe).toBe(false);
+    expect(result.reasons.join(" ")).toContain("Invalid or unsafe sudo usage");
+  });
+
+  test("blocks sudo with no subcommand", () => {
+    const result = checkCommandSafety("sudo", { allowSudo: true });
+    expect(result.safe).toBe(false);
+  });
+
+  test("allows sudo -u user ls with allowSudo", () => {
+    const result = checkCommandSafety("sudo -u root ls", { allowSudo: true });
+    expect(result.safe).toBe(true);
+  });
+
+  test("blocks sudo -u user bash with allowSudo (bash is always banned)", () => {
+    const result = checkCommandSafety("sudo -u root bash", { allowSudo: true });
+    expect(result.safe).toBe(false);
+    expect(result.reasons.join(" ")).toContain("always banned");
+  });
+
+  test("blocks sudo rm -r /etc with allowSudo (critical system path)", () => {
+    const result = checkCommandSafety("sudo rm -r /etc", { allowSudo: true });
+    expect(result.safe).toBe(false);
+    expect(result.reasons.join(" ")).toContain("critical system paths");
+  });
+
+  test("blocks sudo rm -r /boot with allowSudo (critical system path)", () => {
+    const result = checkCommandSafety("sudo rm -r /boot", { allowSudo: true });
+    expect(result.safe).toBe(false);
+    expect(result.reasons.join(" ")).toContain("critical system paths");
+  });
+
+  test("blocks apt without allowSudo", () => {
+    const result = checkCommandSafety("apt update");
+    expect(result.safe).toBe(false);
+    expect(result.reasons.join(" ")).toContain("Use /sudo");
+  });
+
+  test("allows apt update with allowSudo", () => {
+    const result = checkCommandSafety("apt update", { allowSudo: true });
+    expect(result.safe).toBe(true);
+  });
+
+  test("blocks docker without allowSudo", () => {
+    const result = checkCommandSafety("docker ps");
+    expect(result.safe).toBe(false);
+    expect(result.reasons.join(" ")).toContain("Use /sudo");
+  });
+
+  test("allows docker ps with allowSudo", () => {
+    const result = checkCommandSafety("docker ps", { allowSudo: true });
+    expect(result.safe).toBe(true);
   });
 
   test("blocks || operator", () => {

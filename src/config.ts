@@ -3,6 +3,7 @@ export const DEXTER_HELP_KEY = "/help";
 export const DEXTER_HELP_SHORT_KEY = "/?";
 export const DEXTER_HISTORY_KEY = "/history";
 export const DEXTER_CLEAR_KEY = "/clear";
+export const DEXTER_SUDO_KEY_PREFIX = "/sudo";
 export const DEXTER_HISTORY_WINDOW = 12;
 
 export const OLLAMA_BASE_URL =
